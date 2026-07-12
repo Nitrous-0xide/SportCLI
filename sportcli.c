@@ -10,9 +10,46 @@ struct Memory {
     size_t size;
 };
 
+static const char *getCompetitorDisplayName(json_t *competitor) {
+    if (!competitor) return "N/A";
+
+    json_t *athlete = json_object_get(competitor, "athlete");
+    if (athlete) {
+        const char *name = json_string_value(json_object_get(athlete, "displayName"));
+        if (name && strlen(name) > 0) return name;
+    }
+
+    json_t *team = json_object_get(competitor, "team");
+    if (team) {
+        const char *name = json_string_value(json_object_get(team, "displayName"));
+        if (name && strlen(name) > 0) return name;
+    }
+
+    return "N/A";
+}
+
+static const char *getCompetitorMetric(json_t *competitor) {
+    if (!competitor) return "0";
+
+    const char *score = json_string_value(json_object_get(competitor, "score"));
+    if (score && strlen(score) > 0) return score;
+
+    json_t *records = json_object_get(competitor, "records");
+    if (records && json_is_array(records) && json_array_size(records) > 0) {
+        json_t *record = json_array_get(records, 0);
+        if (record) {
+            const char *summary = json_string_value(json_object_get(record, "summary"));
+            if (summary && strlen(summary) > 0) return summary;
+        }
+    }
+
+    return "0";
+}
+
 typedef enum {
     SCREEN_MENU,
-    SCREEN_FIFA_WORLD_CUP
+    SCREEN_FIFA_WORLD_CUP,
+    SCREEN_UFC
 } Screen;
 
 static size_t writeCallback(void *contents, size_t size, size_t nmemb, void *userp) {
@@ -57,6 +94,7 @@ int main() {
 
             attron(COLOR_PAIR(2));
             mvprintw(3, 2, "%c FIFA World Cup", menuSelection == 0 ? '>' : ' ');
+            mvprintw(4, 2, "%c UFC (BETA W.I.P)", menuSelection == 1 ? '>' : ' ');
             attroff(COLOR_PAIR(2));
 
             attron(COLOR_PAIR(3));
@@ -103,12 +141,82 @@ int main() {
                                 json_t *status = json_object_get(comp, "status");
                                 if (!home || !away || !status) continue;
 
+                                const char *homeName = getCompetitorDisplayName(home);
+                                const char *awayName = getCompetitorDisplayName(away);
+                                const char *homeScore = getCompetitorMetric(home);
+                                const char *awayScore = getCompetitorMetric(away);
+                                const char *clock = json_string_value(json_object_get(status, "displayClock")) ?: "";
+                                json_t *statusType = json_object_get(status, "type");
+                                const char *statusDesc = (statusType ? json_string_value(json_object_get(statusType, "description")) : NULL) ?: "Unknown";
+
+                                int row = 3 + i * 2;
+
+                                attron(COLOR_PAIR(2));
+                                if (strcmp(statusDesc, "Scheduled") == 0) {
+                                    mvprintw(row, 0, "%-25s vs %-25s (Not started)", homeName, awayName);
+                                } else {
+                                    mvprintw(row, 0, "%-25s (%s) vs %-25s (%s)", homeName, homeScore, awayName, awayScore);
+                                    if (strlen(clock) > 0) {
+                                        mvprintw(row + 1, 0, "   Time: %s | %s", clock, statusDesc);
+                                    }
+                                }
+                                attroff(COLOR_PAIR(2));
+                            }
+                        }
+                        json_decref(root);
+                    }
+                }
+                curl_easy_cleanup(curl);
+                free(chunk.data);
+            }
+
+            attron(COLOR_PAIR(3));
+            mvprintw(rows - 2, 0, "[b] Return to Main   [r] Refresh Now   [q] Quit");
+            mvprintw(rows - 1, 0, "SportCLI | Powered by ESPN data | Made by _nitrous0xide_");
+            attroff(COLOR_PAIR(3));
+        } else if (screen == SCREEN_UFC) {
+            attron(COLOR_PAIR(1));
+            mvprintw(0, 0, "=== ESPN UFC Live ===");
+            attroff(COLOR_PAIR(1));
+
+            CURL *curl = curl_easy_init();
+            struct Memory chunk = {0};
+            CURLcode res;
+
+            if (curl) {
+                curl_easy_setopt(curl, CURLOPT_URL, "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard");
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+                curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15);
+
+                res = curl_easy_perform(curl);
+
+                if (res == CURLE_OK && chunk.data) {
+                    json_t *root = json_loads(chunk.data, 0, NULL);
+                    if (root) {
+                        json_t *events = json_object_get(root, "events");
+                        if (events && json_is_array(events)) {
+                            size_t n = json_array_size(events);
+
+                            for (size_t i = 0; i < n && i < 8; i++) {
+                                json_t *match = json_array_get(events, i);
+                                json_t *comps = json_object_get(match, "competitions");
+                                if (!comps || !json_is_array(comps)) continue;
+                                json_t *comp = json_array_get(comps, 0);
+                                if (!comp) continue;
+                                json_t *competitors = json_object_get(comp, "competitors");
+                                if (!competitors || !json_is_array(competitors) || json_array_size(competitors) < 2) continue;
+                                json_t *home = json_array_get(competitors, 0);
+                                json_t *away = json_array_get(competitors, 1);
+                                json_t *status = json_object_get(comp, "status");
+                                if (!home || !away || !status) continue;
+
                                 json_t *homeTeam = json_object_get(home, "team");
                                 json_t *awayTeam = json_object_get(away, "team");
-                                const char *homeName = (homeTeam ? json_string_value(json_object_get(homeTeam, "displayName")) : NULL) ?: "N/A";
-                                const char *awayName = (awayTeam ? json_string_value(json_object_get(awayTeam, "displayName")) : NULL) ?: "N/A";
-                                const char *homeScore = json_string_value(json_object_get(home, "score")) ?: "0";
-                                const char *awayScore = json_string_value(json_object_get(away, "score")) ?: "0";
+                                const char *homeName = getCompetitorDisplayName(home);
+                                const char *awayName = getCompetitorDisplayName(away);
+                                const char *homeScore = getCompetitorMetric(home);
+                                const char *awayScore = getCompetitorMetric(away);
                                 const char *clock = json_string_value(json_object_get(status, "displayClock")) ?: "";
                                 json_t *statusType = json_object_get(status, "type");
                                 const char *statusDesc = (statusType ? json_string_value(json_object_get(statusType, "description")) : NULL) ?: "Unknown";
@@ -147,11 +255,16 @@ int main() {
         if (ch == 'q' || ch == 'Q') break;
         if (screen == SCREEN_MENU) {
             if (ch == KEY_UP || ch == KEY_DOWN) {
-                menuSelection = 0;
+                menuSelection = 1 - menuSelection;
             } else if (ch == '\n' || ch == KEY_ENTER) {
-                screen = SCREEN_FIFA_WORLD_CUP;
+                screen = (menuSelection == 0) ? SCREEN_FIFA_WORLD_CUP : SCREEN_UFC;
             }
         } else if (screen == SCREEN_FIFA_WORLD_CUP) {
+            if (ch == 'r' || ch == 'R') continue;
+            if (ch == 'b' || ch == 'B') {
+                screen = SCREEN_MENU;
+            }
+        } else if (screen == SCREEN_UFC) {
             if (ch == 'r' || ch == 'R') continue;
             if (ch == 'b' || ch == 'B') {
                 screen = SCREEN_MENU;
