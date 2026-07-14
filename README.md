@@ -5,10 +5,11 @@ Uses ESPN's unofficial API to get quick updates on live standings for different 
 
 # Current supported events:
 - FIFA world cup
-  
+- UFC
+- NBA
 ---
 
 # Coming soon events:
-- UFC
+
 - Premier League
-- NBA
+
