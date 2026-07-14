@@ -106,7 +106,8 @@ static void clearMatchItem(matchItem *matchItem) {
 // the menu and live view both read from this table.
 static const eventDefinition eventDefinitions[] = {
     {"FIFA World Cup", "=== ESPN FIFA World Cup Live ===", "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard"},
-    {"UFC (BETA W.I.P)", "=== ESPN UFC Live ===", "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"}
+    {"UFC (BETA W.I.P)", "=== ESPN UFC Live ===", "https://site.api.espn.com/apis/site/v2/sports/mma/ufc/scoreboard"},
+    {"NBA", "=== ESPN NBA Live ===", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"}
 };
 
 static const size_t eventDefinitionCount = sizeof(eventDefinitions) / sizeof(eventDefinitions[0]);
@@ -124,7 +125,10 @@ static const char *getVenueName(json_t *competition) {
     json_t *venue = json_object_get(competition, "venue");
     if (!venue) return "N/A";
 
-    return getObjectString(venue, "displayName", "N/A");
+    const char *venueName = getObjectString(venue, "displayName", NULL);
+    if (venueName) return venueName;
+
+    return getObjectString(venue, "fullName", "N/A");
 }
 
 static const char *getBroadcastName(json_t *competition) {
